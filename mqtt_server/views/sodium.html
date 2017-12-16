@@ -1,0 +1,64 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <title>Title</title>
+</head>
+<body>
+<script>
+    window.sodium = { onload: function(sodium) {
+//        console.log((sodium.crypto_generichash(64, 'test')));
+//        for (var i in sodium){
+//            console.log(i)
+//        }
+
+
+        var client_publickey = new ArrayBuffer(sodium.crypto_box_PUBLICKEYBYTES)
+        var server_publickey = new ArrayBuffer(sodium.crypto_box_PUBLICKEYBYTES)
+        var scalarmult_q_by_client = new ArrayBuffer(sodium.crypto_scalarmult_BYTES)
+        var scalarmult_q_by_server = new ArrayBuffer(sodium.crypto_scalarmult_BYTES)
+        var sharedkey_by_client = new ArrayBuffer(sodium.crypto_generichash_BYTES);
+        var sharedkey_by_server = new ArrayBuffer(sodium.crypto_generichash_BYTES);
+
+//secret key:d
+        var client_secretkey = sodium.randombytes_buf(sodium.crypto_box_SECRETKEYBYTES)
+        var server_secretkey = sodium.randombytes_buf(sodium.crypto_box_SECRETKEYBYTES)
+
+//public key :H = d.G
+        client_publickey = sodium.crypto_scalarmult_base(client_secretkey);
+        server_publickey = sodium.crypto_scalarmult_base(server_secretkey)
+
+//G
+        scalarmult_q_by_client = sodium.crypto_scalarmult(client_secretkey, server_publickey)
+//sharedkey_by_client
+        var h = sodium.crypto_generichash_init(null,sharedkey_by_client.byteLength);
+        sodium.crypto_generichash_update(h, scalarmult_q_by_client);
+        sodium.crypto_generichash_update(h, client_publickey)
+        sodium.crypto_generichash_update(h, server_publickey)
+        sharedkey_by_client = sodium.crypto_generichash_final(h, sharedkey_by_client.byteLength);
+        console.log(sodium.to_hex(client_secretkey))
+        console.log(sodium.to_hex(server_publickey))
+        console.log((sodium.to_hex(scalarmult_q_by_client)))
+
+
+//scalarmult_q_by_server
+        scalarmult_q_by_server = sodium.crypto_scalarmult(server_secretkey, client_publickey)
+        var h1 = sodium.crypto_generichash_init(null,sharedkey_by_server.byteLength);
+        sodium.crypto_generichash_update(h1, scalarmult_q_by_server);
+        sodium.crypto_generichash_update(h1, client_publickey)
+        sodium.crypto_generichash_update(h1, server_publickey)
+        sharedkey_by_server = sodium.crypto_generichash_final(h1, sharedkey_by_server.byteLength);
+        console.log(sodium.to_hex(scalarmult_q_by_server))
+
+        var a ='e2d6a6cfadf26a36ddfc8eba11a4095bb96e8e6ee7d6ac9b494d554b3287b76d'
+        var b = '339fde742113d94bc834a1321748202633f73125607fb676524e5111ecccd765'
+        a = sodium.from_hex(a)
+        b = sodium.from_hex(b)
+        console.log(sodium.to_hex(sodium.crypto_scalarmult(a, b)))
+
+    }};
+
+</script>
+<script src="../public/javascripts/sodium.min.js" async defer></script>
+</body>
+</html>

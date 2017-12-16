@@ -1,0 +1,151 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <title>Chat mqtt</title>
+    <link rel='stylesheet' href='/stylesheets/style.css' />
+    <script src="/javascripts/jquery.min.js"></script>
+    <script src="/javascripts/socket.io.js"></script>
+    <script src="/javascripts/sodium.min.js" async defer></script>
+    <script src="/javascripts/BigInteger.min.js" ></script>
+    <script src="/javascripts/can_bac_hai.js" ></script>
+    <script src="/javascripts/ECC.js" ></script>
+    <script src="/javascripts/sha256.js" ></script>
+    <style type="text/css">
+        .message_send{
+            color: #4248f4;
+            margin: 2px;
+        }
+        .message_rpl{
+            color: brown;
+            margin: 2px;
+        }
+    </style>
+</head>
+<body>
+<h1>Test Chat mqtt</h1>
+<input type="text" class="message" >
+<button class="send"> test</button>
+<div class="mas_rpl">
+</div>
+</body>
+<script>
+ 
+    $(document).ready(function () {
+        var socket = io();
+        var ID_b    =  'huytiep'
+        var private_key = bigInt('294111635673278162351154176014102396387625451979036227419125313074038381658941')
+        var IC_b = bigInt('734094368413402745248246225420036830997793844421753261558905224574286217914420')
+        var C_ca_b = bigInt('160525881502485434026879635433951019388458014395473238246856144097602432343671')
+        var n_b = ''
+
+        var ID_a = ''
+        var IC_a = ''
+        var C_ca_a = ''
+        var n_a = ''
+
+        var Lk = ''
+
+        var n_a_templ = ''
+        var n_b_templ = ''
+
+        //ma hoa
+        function aead_chacha20poly1305_encrypt(key,input,nonce,sodium) {
+            var ad = nonce = sodium.from_hex(nonce)
+            key = sodium.from_hex(key)
+            input = sodium.from_string(input)
+
+            cipherText = sodium.crypto_aead_chacha20poly1305_encrypt(input,ad,null,nonce, key)
+            return sodium.to_hex(cipherText)
+        }
+        //giai ma
+        function aead_chacha20poly1305_decrypt(key,cipherText,nonce,sodium) {
+            var ad = nonce = sodium.from_hex(nonce)
+            key = sodium.from_hex(key)
+            cipherText = sodium.from_hex(cipherText)
+
+            text = sodium.crypto_aead_chacha20poly1305_decrypt(null,cipherText,ad,nonce, key)
+            return sodium.to_string(text)
+        }
+        
+        window.sodium = { onload: function(sodium) {
+            var publickey = new ArrayBuffer(sodium.crypto_box_PUBLICKEYBYTES)
+            var scalarmult_q = new ArrayBuffer(sodium.crypto_scalarmult_BYTES)
+            var sharedkey = new ArrayBuffer(sodium.crypto_generichash_BYTES);
+            var secretkey = sodium.randombytes_buf(sodium.crypto_box_SECRETKEYBYTES)
+
+            if (IC_b){
+                var nonce1 = sodium.to_hex(sodium.randombytes_buf(8))
+                n_b_templ =  n_b = nonce1
+                let send = 'massage1'+','+nonce1+','+ID_b+','+IC_b.toString()+','+C_ca_b.toString()
+                socket.emit('html_publickey',send)
+            }
+
+            $('.send').click(function () {
+                var mas=$('.message').val()
+                $('.mas_rpl').append( "<div class='message_send'>"+mas+"</div>")
+                if(Lk){
+                    mas = aead_chacha20poly1305_encrypt(Lk,mas,n_b_templ,sodium)
+                    socket.emit('html_send',mas)
+                }else {
+                    var mas='Erro Key'
+                    $('.mas_rpl').append( "<div class='message_send'>"+mas+"</div>")
+                }
+
+            })
+
+            socket.on('py_send',function (mas,err) {
+                if(Lk) {
+                    mas = aead_chacha20poly1305_decrypt(Lk, mas,n_a_templ, sodium)
+                    if(true){
+                        $('.mas_rpl').append("<div class='message_rpl'>" + mas + "</div>")
+                    }else {
+                        var mas='Erro Key'
+                        $('.mas_rpl').append( "<div class='message_send'>"+mas+"</div>")
+                    }
+
+                }else {
+                    var mas='Erro Key'
+                    $('.mas_rpl').append( "<div class='message_send'>"+mas+"</div>")
+                }
+            })
+
+            //publickey dc gui sang roi su ly
+            socket.on('py_send_publicKey',function (mas,err) {
+                mas = (mas.split(","))
+                n_a_templ = n_a = mas[1]
+                ID_a =  mas[2]
+                IC_a =  mas[3]
+
+                //P = s v,A · P b,B
+                var P_client = create_key_to_third_party(mas[4],mas[3],'huytiep')
+                var P = scalar_mult(private_key,x_to_Point(P_client))
+                //Pre Link Key, P K ,
+                var h1 = sodium.crypto_generichash_init(null,32);
+                sodium.crypto_generichash_update(h1, P[0].toString())
+                var Pk = sodium.crypto_generichash_final(h1, 32);
+                Pk = sodium.to_hex(Pk)
+                //α B = Auth(P K , (P B , P A , ρ B , ρ A )).
+                massage_authen = IC_a.toString()+IC_b.toString()+n_a+n_b
+                var massage2 = aead_chacha20poly1305_encrypt(Pk,massage_authen,n_b,sodium);
+                socket.emit('massage2',massage2)
+                //MAC Verification
+                socket.on('publicKey_massage2',function (mas,err) {
+                    var verify = aead_chacha20poly1305_decrypt(Pk,mas,n_a,sodium)
+                    if(verify==massage_authen){
+                        Lk = Pk+n_a+n_b
+                        var h2 = sodium.crypto_generichash_init(null,32);
+                        sodium.crypto_generichash_update(h2,Lk)
+                        Lk = sodium.crypto_generichash_final(h2, 32);
+                        Lk = sodium.to_hex(Lk)
+                    }else{
+                        location.reload();
+                    }
+                })
+            })
+        
+        }};
+    })
+
+</script>
+</html>
